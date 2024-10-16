@@ -5,43 +5,11 @@ import open3d as o3d
 from pynput import keyboard
 from scipy.spatial.transform import Rotation as Rot
 
-def traducao(raio,azimuth,elev): 
+def traducao(raio, azimuth, elev):
     x = raio * np.cos(azimuth) * np.sin(elev)
     y = raio * np.sin(azimuth) * np.sin(elev)
     z = raio * np.cos(elev)
     return x,y,z
-
-def rotation(roll, pitch, yaw):
-    R_yaw = np.array([[np.cos(yaw), -np.sin(yaw), 0],
-                      [np.sin(yaw), np.cos(yaw), 0],
-                      [0, 0, 1]])
-
-    R_pitch = np.array([[np.cos(pitch), 0, np.sin(pitch)],
-                        [0, 1, 0], 
-                        [-np.sin(pitch), 0, np.cos(pitch)]])
-
-    R_roll = np.array([[1, 0, 0],
-                       [0, np.cos(roll), -np.sin(roll)],
-                       [0, np.sin(roll), np.cos(roll)]])
-    
-    R = (R_yaw@(R_pitch@R_roll)).T
-    return R
-
-def on_press(key):
-    global pressed_keys
-    if hasattr(key, 'char'):
-        pressed_keys.append(key.char)
-        pressed_keys = list(set(pressed_keys))
-
-def on_release(key):
-    global pressed_keys
-    if hasattr(key, 'char'):
-        pressed_keys.remove(key.char)
-
-listener = keyboard.Listener(
-    on_press=on_press,
-    on_release=on_release)
-listener.start()
 
 def parse_keys(keys, val):
     command = np.zeros(8)
@@ -69,6 +37,22 @@ def parse_keys(keys, val):
 
     return command
 
+def on_press(key):
+    global pressed_keys
+    if hasattr(key, 'char'):
+        pressed_keys.append(key.char)
+        pressed_keys = list(set(pressed_keys))
+
+def on_release(key):
+    global pressed_keys
+    if hasattr(key, 'char'):
+        pressed_keys.remove(key.char)
+
+listener = keyboard.Listener(
+    on_press=on_press,
+    on_release=on_release)
+listener.start()
+
 pressed_keys = list()
 force = 25
 
@@ -83,28 +67,28 @@ binsR = sonar_config['RangeBins']
 binsA = sonar_config['AzimuthBins']
 elev = sonar_config['Elevation']
 
-plt.ion()
+"""plt.ion()
 fig, ax = plt.subplots(subplot_kw=dict(projection='polar'))
 ax.set_theta_zero_location("N")
 ax.set_thetamin(-azi/2)
-ax.set_thetamax(azi/2)
+ax.set_thetamax(azi/2)"""
 
-theta = np.linspace(-azi/2, azi/2, binsA)*np.pi/180
+theta = np.linspace(-azi/2, azi/2, binsA) * np.pi / 180
 r = np.linspace(minR, maxR, binsR)
 T, R = np.meshgrid(theta, r)
-z = np.zeros_like(T)
+#z = np.zeros_like(T)
 
-plt.grid(False)
+"""plt.grid(False)
 plot = ax.pcolormesh(T, R, z, cmap='gray', shading='auto', vmin=0, vmax=1)
 plt.tight_layout()
 fig.canvas.draw()
-fig.canvas.flush_events()
+fig.canvas.flush_events()"""
 
-command = [0,0,0,0,0,0,0,5]
+command = [0, 0, 0, 0, 0, 0, 0, 0]
 
 with holoocean.make(scenario) as env:
 
-    x_coord,y_coord,z_coord = [],[],[]
+    all_coords = []
 
     while True:
         if 'q' in pressed_keys:
@@ -114,35 +98,37 @@ with holoocean.make(scenario) as env:
         env.act("auv0", command)
         state = env.tick()
         location = config['agents'][0]['location']
+        rotation = config['agents'][0]['rotation']
+
         if 'ImagingSonar' in state:
             sonar_data = state['ImagingSonar']
-
-            plot.set_array(sonar_data.ravel())
+            """plot.set_array(sonar_data.ravel())
             fig.canvas.draw()
-            fig.canvas.flush_events()
+            fig.canvas.flush_events()"""
                 
-            dist_vals,angul_vals = np.meshgrid(r,theta,indexing="ij")
-            x,y,z = traducao(dist_vals, angul_vals, np.radians(90 - elev))
+            dist_vals, angul_vals = np.meshgrid(r, theta, indexing="ij")
+            x, y, z = traducao(dist_vals, angul_vals, np.radians(90 - elev))
+
+            rot = Rot.from_euler("xyz", rotation, degrees=True)
+            rot = rot.as_matrix() 
+            rot = rot.T
+
             mask = sonar_data > np.max(sonar_data) * 0.8 
+            #print(location)
+            coords = np.column_stack((x[mask] + location[0], 
+                                      y[mask] + location[1], 
+                                      z[mask] + location[2]))
+            coords = coords@rot
+            all_coords.append(coords)
 
-            x_coord.append(x[mask] + location[0])
-            y_coord.append(y[mask] + location[1])
-            z_coord.append(z[mask] + location[2])
+    all_coords = np.vstack(all_coords)
 
-
-    '''x_coord = np.concatenate(x_coord)
-    y_coord = np.concatenate(y_coord)
-    z_coord = np.concatenate(z_coord)'''
-
-    cloud = np.column_stack((x_coord,y_coord,z_coord)) 
-    #r = Rot.from_euler('xyz', location)
-    #cloud = cloud @ r
-        
     pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(cloud)
+    pcd.points = o3d.utility.Vector3dVector(all_coords)
+    
     o3d.io.write_point_cloud(f"clouds/crop_clouds/mission-1/cloud.xyz", pcd)
     pcd_load = o3d.io.read_point_cloud(f"clouds/crop_clouds/mission-1/cloud.xyz")
     o3d.visualization.draw_geometries([pcd])
 
-    plt.ioff()
-    plt.show()
+    """plt.ioff()
+    plt.show()"""
