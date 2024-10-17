@@ -1,5 +1,5 @@
 import holoocean
-import matplotlib.pyplot as plt
+import holoocean.sensors
 import numpy as np
 import open3d as o3d
 from pynput import keyboard
@@ -59,32 +59,18 @@ force = 25
 #### GET SONAR CONFIG
 scenario = "OpenWater-HoveringImagingSonar"
 config = holoocean.packagemanager.get_scenario(scenario)
-sonar_config = config['agents'][0]['sensors'][-1]["configuration"]
+sonar_config = config['agents'][0]['sensors'][-2]["configuration"]
 azi = sonar_config['Azimuth']
 minR = sonar_config['RangeMin']
 maxR = sonar_config['RangeMax']
 binsR = sonar_config['RangeBins']
 binsA = sonar_config['AzimuthBins']
-elev = sonar_config['Elevation']
-
-"""plt.ion()
-fig, ax = plt.subplots(subplot_kw=dict(projection='polar'))
-ax.set_theta_zero_location("N")
-ax.set_thetamin(-azi/2)
-ax.set_thetamax(azi/2)"""
 
 theta = np.linspace(-azi/2, azi/2, binsA) * np.pi / 180
 r = np.linspace(minR, maxR, binsR)
 T, R = np.meshgrid(theta, r)
-#z = np.zeros_like(T)
 
-"""plt.grid(False)
-plot = ax.pcolormesh(T, R, z, cmap='gray', shading='auto', vmin=0, vmax=1)
-plt.tight_layout()
-fig.canvas.draw()
-fig.canvas.flush_events()"""
-
-command = [0, 0, 0, 0, 0, 0, 0, 0]
+#command = [0, 0, 0, 0, 0, 0, 0, 0]
 
 with holoocean.make(scenario) as env:
 
@@ -93,21 +79,19 @@ with holoocean.make(scenario) as env:
     while True:
         if 'q' in pressed_keys:
             break
-        #command = parse_keys(pressed_keys, force)
+        command = parse_keys(pressed_keys, force)
 
         env.act("auv0", command)
         state = env.tick()
-        location = config['agents'][0]['location']
+        #location = config['agents'][0]['location']
         rotation = config['agents'][0]['rotation']
-
+        location = state['LocationSensor']
+        #rotation = 
         if 'ImagingSonar' in state:
             sonar_data = state['ImagingSonar']
-            """plot.set_array(sonar_data.ravel())
-            fig.canvas.draw()
-            fig.canvas.flush_events()"""
-                
+            
             dist_vals, angul_vals = np.meshgrid(r, theta, indexing="ij")
-            x, y, z = traducao(dist_vals, angul_vals, np.radians(90 - elev))
+            x, y, z = traducao(dist_vals, angul_vals, np.radians(90 - rotation[1]))
 
             rot = Rot.from_euler("xyz", rotation, degrees=True)
             rot = rot.as_matrix() 
@@ -118,7 +102,7 @@ with holoocean.make(scenario) as env:
             coords = np.column_stack((x[mask] + location[0], 
                                       y[mask] + location[1], 
                                       z[mask] + location[2]))
-            coords = coords@rot
+            coords = coords @ rot
             all_coords.append(coords)
 
     all_coords = np.vstack(all_coords)
@@ -129,6 +113,3 @@ with holoocean.make(scenario) as env:
     o3d.io.write_point_cloud(f"clouds/crop_clouds/mission-1/cloud.xyz", pcd)
     pcd_load = o3d.io.read_point_cloud(f"clouds/crop_clouds/mission-1/cloud.xyz")
     o3d.visualization.draw_geometries([pcd])
-
-    """plt.ioff()
-    plt.show()"""
