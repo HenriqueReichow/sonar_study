@@ -70,8 +70,6 @@ theta = np.linspace(-azi/2, azi/2, binsA) * np.pi / 180
 r = np.linspace(minR, maxR, binsR)
 T, R = np.meshgrid(theta, r)
 
-#command = [0, 0, 0, 0, 0, 0, 0, 0]
-
 with holoocean.make(scenario) as env:
 
     all_coords = []
@@ -83,26 +81,28 @@ with holoocean.make(scenario) as env:
 
         env.act("auv0", command)
         state = env.tick()
-        #location = config['agents'][0]['location']
-        rotation = config['agents'][0]['rotation']
+        #rotation = config['agents'][0]['rotation']
         location = state['LocationSensor']
-        #rotation = 
+        rotation = state['PoseSensor']
+        print(rotation[0][0])
+        #print(rotation)
         if 'ImagingSonar' in state:
             sonar_data = state['ImagingSonar']
             
             dist_vals, angul_vals = np.meshgrid(r, theta, indexing="ij")
-            x, y, z = traducao(dist_vals, angul_vals, np.radians(90 - rotation[1]))
+            x, y, z = traducao(dist_vals, angul_vals, np.radians(90 ))
 
-            rot = Rot.from_euler("xyz", rotation, degrees=True)
+
+            """rot = Rot.from_euler("xyz", rotation)
             rot = rot.as_matrix() 
-            rot = rot.T
-
+            rot = rot.T"""
+            
             mask = sonar_data > np.max(sonar_data) * 0.8 
-            #print(location)
+
             coords = np.column_stack((x[mask] + location[0], 
                                       y[mask] + location[1], 
                                       z[mask] + location[2]))
-            coords = coords @ rot
+            #coords = coords @ rot
             all_coords.append(coords)
 
     all_coords = np.vstack(all_coords)

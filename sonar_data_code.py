@@ -8,8 +8,8 @@ def traducao(raio,azimuth,elev):
     y = raio * np.sin(azimuth) * np.sin(elev)
     z = raio * np.cos(elev)
 
-    y_roll = y * np.cos(roll) - z * np.sin(roll)
-    z_roll = y * np.sin(roll) + z * np.cos(roll)
+    #y_roll = y * np.cos(roll) - z * np.sin(roll)
+    #z_roll = y * np.sin(roll) + z * np.cos(roll)
     return x,y,z
 
 def rotation(roll, pitch, yaw):
@@ -30,15 +30,15 @@ def rotation(roll, pitch, yaw):
     return R
 
 for n in range(40):
-    x_coord,y_coord,z_coord = [],[],[]
+    all_coords = []
     for k in range(1,200):
             try:
-                dados = np.load(f"/home/lh/Documents/mission-1/auv-{n}-data/{n}-raw-sonar-data-{k}.npy")
+                dados = np.load(f"/home/lh/Documents/all_missions/mission-1/auv-{n}-data/{n}-raw-sonar-data-{k}.npy")
 
             except FileNotFoundError as error:
                   break
             else:
-                with open(f'/home/lh/Documents/mission-1/auv-{n}-data/{n}-sonar_meta_data-{k}.json','r') as arquivo:
+                with open(f'/home/lh/Documents/all_missions/mission-1/auv-{n}-data/{n}-sonar_meta_data-{k}.json','r') as arquivo:
                         dados_json = json.load(arquivo)
 
                 azi = dados_json["sonar_azimuth"]
@@ -59,19 +59,18 @@ for n in range(40):
 
                 mask_points = dados > np.max(dados) * 0.8 
                 mask_distances = np.sqrt(x**2 + y**2 + z**2) < 3.5
-                mask = mask_points & mask_distances
+                mask = mask_points #& mask_distances
 
-                x_coord.append((x[mask] + sonar_pos_x).flatten())
-                y_coord.append((y[mask] + sonar_pos_y).flatten())
-                z_coord.append((z[mask] + sonar_pos_z).flatten())
+                coords = np.column_stack((x[mask] + sonar_pos_x, 
+                                      y[mask] + sonar_pos_y, 
+                                      z[mask] + sonar_pos_z))
+                #coords = coords @ rot
+                all_coords.append(coords)
 
-    x_coord = np.concatenate(x_coord)
-    y_coord = np.concatenate(y_coord)
-    z_coord = np.concatenate(z_coord)   
+   
+    all_coords = np.vstack(all_coords)
 
-    cloud = np.column_stack((x_coord,y_coord,z_coord)) 
-
-    cloud = np.dot(cloud, rotation(roll, pitch, yaw))
+    cloud = np.dot(all_coords, rotation(roll, pitch, yaw))
     
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(cloud)
