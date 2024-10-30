@@ -3,13 +3,16 @@ import numpy as np
 import json
 import open3d as o3d
 
+"""class Sonar_data_pcd:
+
+    def __init__(self, data_sonar, data_json):
+          self.data_sonar = data_sonar
+          self.data_json = data_json
+"""
 def traducao(raio,azimuth,elev): 
     x = raio * np.cos(azimuth) * np.sin(elev)
     y = raio * np.sin(azimuth) * np.sin(elev)
     z = raio * np.cos(elev)
-
-    #y_roll = y * np.cos(roll) - z * np.sin(roll)
-    #z_roll = y * np.sin(roll) + z * np.cos(roll)
     return x,y,z
 
 def rotation(roll, pitch, yaw):
@@ -26,17 +29,16 @@ def rotation(roll, pitch, yaw):
                        [0, np.sin(roll), np.cos(roll)]])
     
     R = (np.dot(R_yaw, np.dot(R_pitch, R_roll))).T
-
     return R
 
 for n in range(40):
     all_coords = []
-    for k in range(1,200):
+    for k in range(1,500):
             try:
                 dados = np.load(f"/home/lh/Documents/all_missions/mission-1/auv-{n}-data/{n}-raw-sonar-data-{k}.npy")
 
             except FileNotFoundError as error:
-                  break
+                break
             else:
                 with open(f'/home/lh/Documents/all_missions/mission-1/auv-{n}-data/{n}-sonar_meta_data-{k}.json','r') as arquivo:
                         dados_json = json.load(arquivo)
@@ -51,26 +53,23 @@ for n in range(40):
                 yaw = dados_json["yaw"]
                 roll = dados_json["roll"]
 
-                #tentando transformar em pointcloud
                 distances = np.linspace(minR, maxR, len(dados))
                 angulos = np.radians(np.linspace(-azi/2 + yaw, azi/2 + yaw, len(dados[:][0])))
                 dist_vals,angul_vals = np.meshgrid(distances,angulos,indexing="ij")
                 x,y,z = traducao(dist_vals, angul_vals, np.radians(90 - pitch))
-
+                    
                 mask_points = dados > np.max(dados) * 0.8 
                 mask_distances = np.sqrt(x**2 + y**2 + z**2) < 3.5
-                mask = mask_points #& mask_distances
+                mask = mask_points & mask_distances
 
                 coords = np.column_stack((x[mask] + sonar_pos_x, 
-                                      y[mask] + sonar_pos_y, 
-                                      z[mask] + sonar_pos_z))
-                #coords = coords @ rot
+                                    y[mask] + sonar_pos_y,
+                                    z[mask] + sonar_pos_z))
                 all_coords.append(coords)
 
-   
     all_coords = np.vstack(all_coords)
 
-    cloud = np.dot(all_coords, rotation(roll, pitch, yaw))
+    cloud = all_coords @ rotation(roll, pitch, yaw)
     
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(cloud)
