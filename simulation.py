@@ -111,6 +111,7 @@ with holoocean.make(scenario) as env:
             
             coords = coords @ rotation 
             all_coords.append(coords)
+            
             while np.all(pos) != np.all(max_coord):
                 state = env.step(np.concatenate((max_coord,rot), axis=0))
 
@@ -125,18 +126,8 @@ with holoocean.make(scenario) as env:
 
     #detectar qual região do hov tem uma concentracao maior de points
     #e assim fazer ele se locomover até ela 
-
-    #detectar qual região do hov tem uma concentracao maior de points
-    #e assim fazer ele se locomover até ela 
-    """while True:
-            state = env.tick()
-            
-            pose = state['PoseSensor']
-
-            rotation = pose[:3,:3]
-            rot = Rot.from_matrix(rotation)
-            rot = rot.as_euler('xyz', degrees=True)
-            pos = pose[:3,3]
-            state = env.step(max_coord)
-            if np.linalg.norm(pos-max_coord) < 1e-1:
-                break"""
+    #centralizar o ponto mais denso dos dados com o centro de visão do hov
+    #env.act resultou algo
+    #manter as rotações estaveis (está desgovernado)
+    #melhorar o código, está muito confuso
+    #branch com tipos de controles diferentes ao final (orientar a objetos resolve)
