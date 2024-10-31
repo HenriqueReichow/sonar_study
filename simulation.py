@@ -53,6 +53,16 @@ def on_release(key):
     if hasattr(key, 'char'):
         pressed_keys.remove(key.char)
 
+def configs_scenario(scenario):
+    config = holoocean.packagemanager.get_scenario(scenario)
+    sonar_config = config['agents'][0]['sensors'][-1]["configuration"]
+    azi = sonar_config['Azimuth']
+    minR = sonar_config['RangeMin']
+    maxR = sonar_config['RangeMax']
+    binsR = sonar_config['RangeBins']
+    binsA = sonar_config['AzimuthBins']
+    return azi,minR,maxR,binsR,binsA
+
 listener = keyboard.Listener(
     on_press=on_press,
     on_release=on_release)
@@ -62,27 +72,21 @@ pressed_keys = list()
 force = 25
 
 scenario = "Dam-HoveringImagingSonar"
-config = holoocean.packagemanager.get_scenario(scenario)
-sonar_config = config['agents'][0]['sensors'][-1]["configuration"]
-azi = sonar_config['Azimuth']
-minR = sonar_config['RangeMin']
-maxR = sonar_config['RangeMax']
-binsR = sonar_config['RangeBins']
-binsA = sonar_config['AzimuthBins']
+azi,minR,maxR,binsR,binsA = configs_scenario(scenario)
 
 theta = np.linspace(-azi/2, azi/2, binsA) * np.pi/180
 r = np.linspace(minR, maxR, binsR)
 T, R = np.meshgrid(theta, r)
-
+locations = [[-180.5, 42.5, -30.0, 0,0,180], [-180.5, 42.5, -5.0, 0, 0, 180]]
 with holoocean.make(scenario) as env:
 
     all_coords = []
     while True:
         if 'q' in pressed_keys:
             break
-        command = parse_keys(pressed_keys, force)
+        #command = parse_keys(pressed_keys, force)
         
-        env.act("auv0", command)
+        #env.act("auv0", locations[0])
         state = env.tick()
         
         pose = state['PoseSensor']
@@ -99,13 +103,16 @@ with holoocean.make(scenario) as env:
             x, y, z = traducao(dist_vals, angul_vals, np.radians(90 - rot[1]))
 
             mask = sonar_data > np.max(sonar_data) * 0.8 
-
+            max = sonar_data == np.max(sonar_data)
+            max_coord = np.column_stack((x[max] + pos[0], y[max] + pos[1], z[max] + pos[2])) 
             coords = np.column_stack((x[mask] + pos[0], 
                                       y[mask] + pos[1], 
                                       z[mask] + pos[2]))
             
             coords = coords @ rotation 
             all_coords.append(coords)
+            while np.all(pos) != np.all(max_coord):
+                state = env.step(np.concatenate((max_coord,rot), axis=0))
 
     all_coords = np.vstack(all_coords)
 
@@ -118,3 +125,18 @@ with holoocean.make(scenario) as env:
 
     #detectar qual região do hov tem uma concentracao maior de points
     #e assim fazer ele se locomover até ela 
+
+    #detectar qual região do hov tem uma concentracao maior de points
+    #e assim fazer ele se locomover até ela 
+    """while True:
+            state = env.tick()
+            
+            pose = state['PoseSensor']
+
+            rotation = pose[:3,:3]
+            rot = Rot.from_matrix(rotation)
+            rot = rot.as_euler('xyz', degrees=True)
+            pos = pose[:3,3]
+            state = env.step(max_coord)
+            if np.linalg.norm(pos-max_coord) < 1e-1:
+                break"""
