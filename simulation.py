@@ -76,19 +76,19 @@ class HOVSimulator:
         dist_vals, angul_vals = np.meshgrid(self.r, self.theta, indexing="ij")
         x, y, z = self.coord_translate(dist_vals, angul_vals, np.radians(90 - self.rotation[1]))
         mask = sonar_data > (np.max(sonar_data) * self.max_intensity)
-
         coords = np.column_stack((x[mask] + self.position[0], 
-                                  y[mask] + self.position[1], 
-                                  z[mask] + self.position[2]))
+                                 y[mask] + self.position[1], 
+                                 z[mask] + self.position[2]))
 
         coords = coords @ self.rotation_matrix
         return coords
-
+    
     def pose_sensor_update(self, state):
         pose = state['PoseSensor']
         self.rotation_matrix = pose[:3, :3]
         rotation = Rot.from_matrix(self.rotation_matrix)
         self.rotation = rotation.as_euler('xyz', degrees=True)
+        self.rotation = self.rotation + self.rot_inicial
         self.position = pose[:3, 3]
 
     def visualize_image_sonar(self):
@@ -124,35 +124,62 @@ class HOVSimulator:
         if visualize_pcd:
             o3d.visualization.draw_geometries([pcd])
 
-    def automatic_control(self, state):
-        x = []
-        np.linspace(0,1,100)
+    def get_dense_region(self, state):
+        sonar_data = state['ImagingSonar']
+        dist_vals, angul_vals = np.meshgrid(self.r, self.theta, indexing="ij")
+
+        x, y, z = self.coord_translate(dist_vals, angul_vals, np.radians(90 - self.rotation[1]))
+
+        mask = sonar_data == np.max(sonar_data)
+
+        coords = np.column_stack((x[mask] + self.position[0], 
+                                 y[mask] + self.position[1], 
+                                 z[mask] + self.position[2]))
+
+        coords = coords @ self.rotation_matrix
+        print(self.position)
+        return coords
     
+    def automatic_control(self,state):
+        coord = self.get_dense_region(state)
+        command = np.concatenate((coord,self.rotation),axis=None)
+
+        for i in range(10):
+            self.env.act('auv0',command)
+        print(coord)
+
     def run_simulation(self):
+        i = 0
         if self.sonar_image:
             self.visualize_image_sonar()
-        all_coords = []
 
+        all_coords = []
         while True:
             if 'q' in self.pressed_keys:
-                plt.close()
                 break
-            command = self.parse_keys(self.force)
-            self.env.act("auv0", command)
-            state = self.env.tick()
+            
+            if i == 0:
+                self.env.step(np.concatenate((self.pos_inicial,self.rot_inicial),axis=None))
 
+            state = self.env.tick()
+            if self.auto_control == False:
+                command = self.parse_keys(self.force)
+                self.env.act("auv0", command)
             self.pose_sensor_update(state)
 
             if 'ImagingSonar' in state:
                 coords = self.sonar_data_(state)
+                if self.auto_control:
+                    self.automatic_control(state)
                 all_coords.append(coords)
+
                 if self.sonar_image:
                     self.update_sonar_image(state)
 
         all_coords = np.vstack(all_coords)
         self.create_pointcloud(all_coords,'cloud',visualize_pcd=True)
 
-hov_simulator = HOVSimulator(auto_control=False)
+hov_simulator = HOVSimulator(auto_control=True)
 hov_simulator.run_simulation()
 
 #detectar qual região do hov tem uma concentracao maior de points
