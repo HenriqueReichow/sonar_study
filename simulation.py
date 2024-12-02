@@ -1,9 +1,13 @@
 import holoocean
 import numpy as np
+import matplotlib.pyplot as plt
 import open3d as o3d
 from pynput import keyboard
+import sys
+import math
+sys.path.append('/home/lh/Desktop/HoloOceanUtils')
+import holoOceanUtils
 from scipy.spatial.transform import Rotation as Rot
-import matplotlib.pyplot as plt
 
 class HOVSimulator:
     def __init__(self, scenario="Dam-HoveringImagingSonar", force=25, max_intensity=0.8, auto_control=True, sonar_image=False):
@@ -30,6 +34,11 @@ class HOVSimulator:
 
         listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
         listener.start()
+        self.pid_controller_linear = holoOceanUtils.PIDController(kp=0.5, ki=0.0, kd=0.01)
+        self.pid_controller_angular = holoOceanUtils.PIDController(kp=0.01, ki=0.0, kd=0.01)
+        self.dt = 1 / 200
+
+        self.command = None
 
     def coord_translate(self, raio, azimuth, elev):
         x = raio * np.cos(azimuth) * np.sin(elev)
@@ -49,7 +58,6 @@ class HOVSimulator:
         if 'l' in self.pressed_keys:
             command[[4,7]] -= val
             command[[5,6]] += val
-            
         if 'w' in self.pressed_keys:
             command[4:8] += val
         if 's' in self.pressed_keys:
@@ -61,6 +69,48 @@ class HOVSimulator:
             command[[4,6]] -= val
             command[[5,7]] += val
         return command
+    
+    def pose_sensor_update(self, state):
+        pose = state['PoseSensor']
+        self.rotation_matrix = pose[:3, :3]
+        rotation = Rot.from_matrix(self.rotation_matrix)
+        self.rotation = rotation.as_euler('xyz', degrees=True)
+        self.position = pose[:3, 3]
+        
+    def create_pointcloud(self, all_coords, name=str, visualize_pcd=True):
+        if self.sonar_image:
+            visualize_pcd = False
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(all_coords)
+        o3d.io.write_point_cloud("simulation_cloud/" + name + ".xyz", pcd)
+        if visualize_pcd:
+            o3d.visualization.draw_geometries([pcd])
+
+    def visualize_image_sonar(self):
+        plt.ion()
+        self.fig, self.ax = plt.subplots(subplot_kw=dict(projection='polar'), figsize=(8, 5))
+        self.ax.set_theta_zero_location("N")
+
+        self.ax.set_thetamin(-self.azi / 2)
+        self.ax.set_thetamax(self.azi / 2)
+
+        theta = np.linspace(-self.azi / 2, self.azi / 2, self.binsA) * np.pi / 180
+        r = np.linspace(self.minR, self.maxR, self.binsR)
+        T, R = np.meshgrid(theta, r)
+        z = np.zeros_like(T)
+        
+        plt.grid(False)
+        self.plot = self.ax.pcolormesh(T, R, z, cmap='gray', shading='auto', vmin=0, vmax=1)
+        plt.tight_layout()
+        self.fig.canvas.draw()
+        self.fig.canvas.flush_events()
+
+    def update_sonar_image(self, state):
+        s = state['ImagingSonar']
+        self.plot.set_array(s.ravel())
+        #self.ax.scatter(np.max(s), color='red', s=100, label='Ponto mais denso')
+        self.fig.canvas.draw()
+        self.fig.canvas.flush_events()
 
     def on_press(self, key):
         if hasattr(key, 'char'):
@@ -71,120 +121,75 @@ class HOVSimulator:
         if hasattr(key, 'char'):
             self.pressed_keys.remove(key.char)
 
-    def sonar_data_(self, state):
-        sonar_data = state['ImagingSonar']
-        dist_vals, angul_vals = np.meshgrid(self.r, self.theta, indexing="ij")
-        x, y, z = self.coord_translate(dist_vals, angul_vals, np.radians(90 - self.rotation[1]))
-        mask = sonar_data > (np.max(sonar_data) * self.max_intensity)
-        coords = np.column_stack((x[mask] + self.position[0], 
-                                 y[mask] + self.position[1], 
-                                 z[mask] + self.position[2]))
-
-        coords = coords @ self.rotation_matrix
-        return coords
-    
-    def pose_sensor_update(self, state):
-        pose = state['PoseSensor']
-        self.rotation_matrix = pose[:3, :3]
-        rotation = Rot.from_matrix(self.rotation_matrix)
-        self.rotation = rotation.as_euler('xyz', degrees=True)
-        self.rotation = self.rotation + self.rot_inicial
-        self.position = pose[:3, 3]
-
-    def visualize_image_sonar(self):
-        plt.ion()
-        self.fig, self.ax = plt.subplots(subplot_kw=dict(projection='polar'), figsize=(8,5))
-        self.ax.set_theta_zero_location("N")
-        self.ax.set_thetamin(-self.azi/2)
-        self.ax.set_thetamax(self.azi/2)
-
-        theta = np.linspace(-self.azi/2, self.azi/2, self.binsA)*np.pi/180
-        r = np.linspace(self.minR, self.maxR, self.binsR)
-        T, R = np.meshgrid(theta, r)
-        z = np.zeros_like(T)
-
-        plt.grid(False)
-        self.plot = self.ax.pcolormesh(T, R, z, cmap='gray', shading='auto', vmin=0, vmax=1)
-        plt.tight_layout()
-        self.fig.canvas.draw()
-        self.fig.canvas.flush_events()
-
-    def update_sonar_image(self,state):
-        s = state['ImagingSonar']
-        self.plot.set_array(s.ravel())
-        self.fig.canvas.draw()
-        self.fig.canvas.flush_events()
+    def calculateVelocities(self,point,rot)->None:
+        position_error = point - self.position
         
-    def create_pointcloud(self, all_coords, name=str, visualize_pcd=True):
-        if self.sonar_image:
-            visualize_pcd = False
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(all_coords)
-        o3d.io.write_point_cloud("simulation_cloud/"+name+".xyz", pcd)
-        if visualize_pcd:
-            o3d.visualization.draw_geometries([pcd])
+        desired_linear_velocity = self.pid_controller_linear.update(np.linalg.norm(position_error), self.dt)
+        linear_velocity = position_error / np.linalg.norm(position_error) * desired_linear_velocity
 
-    def get_dense_region(self, state):
+        erro_orientacao = rot - self.rotation
+
+        erro_orientacao[erro_orientacao > 180] -= 360
+        erro_orientacao[erro_orientacao < -180] += 360
+
+        desired_angular_velocity = self.pid_controller_angular.update(np.linalg.norm(erro_orientacao), self.dt)
+        angular_velocity = erro_orientacao / np.linalg.norm(erro_orientacao) * desired_angular_velocity
+        angular_velocity=[0,0,angular_velocity[2]]
+        self.command = np.concatenate(([0,0,0], angular_velocity), axis=None)
+        print(self.command)
+
+    def get_coord_from_sonar(self, state):
         sonar_data = state['ImagingSonar']
-        dist_vals, angul_vals = np.meshgrid(self.r, self.theta, indexing="ij")
-
-        x, y, z = self.coord_translate(dist_vals, angul_vals, np.radians(90 - self.rotation[1]))
-
-        mask = sonar_data == np.max(sonar_data)
-
+        dist_vals, self.angul_vals = np.meshgrid(self.r, self.theta, indexing="ij")
+        x, y, z = self.coord_translate(dist_vals, self.angul_vals, np.radians(90 - self.rotation[1]))
+        print(x,y,z)
+        mask_points = sonar_data > (np.max(sonar_data) * self.max_intensity)
+        mask_distances = np.sqrt(x**2 + y**2 + z**2) < 35.0
+        mask = mask_points & mask_distances
         coords = np.column_stack((x[mask] + self.position[0], 
                                  y[mask] + self.position[1], 
                                  z[mask] + self.position[2]))
-
-        coords = coords @ self.rotation_matrix
-        print(self.position)
+        
         return coords
     
-    def automatic_control(self,state):
-        coord = self.get_dense_region(state)
-        command = np.concatenate((coord,self.rotation),axis=None)
-
-        for i in range(10):
-            self.env.act('auv0',command)
-        print(coord)
+    def align_to_dense_region(self, state):
+        #************* = pendencias aqui
+        sonar_data = state['ImagingSonar']
+        ponto_A = sonar_data[0][self.binsA//2]
+        ponto_A = self.coord_translate(self.maxR, self.binsA/2, np.radians(90 - self.rotation[1]))
+        vetor_v = [ponto_A[0]-self.position[0], ponto_A[1]-self.position[1], ponto_A[2]-self.position[2]]
+        coords = self.get_coord_from_sonar(state)
+        mean_point = np.mean(coords, axis=0)
+        vetor_u = [mean_point[0]-self.position[0], mean_point[1]-self.position[1], mean_point[2]-self.position[2]]
+        cos_alfa = ((vetor_v[0]*vetor_u[0]) + (vetor_v[1]*vetor_u[1]) + (vetor_v[2]*vetor_u[2])) / (np.linalg.norm(vetor_u)*np.linalg.norm(vetor_v))
+        angulo = math.degrees(math.acos(cos_alfa))
+ 
+        self.calculateVelocities(self.position,[0,0,75-angulo])
+        if self.rotation[2] <= 75-angulo+1:
+            self.command = [0,0,0,0,0,0]
 
     def run_simulation(self):
-        i = 0
+        all_coords = []
         if self.sonar_image:
             self.visualize_image_sonar()
-
-        all_coords = []
         while True:
             if 'q' in self.pressed_keys:
+                plt.close()
                 break
-            
-            if i == 0:
-                self.env.step(np.concatenate((self.pos_inicial,self.rot_inicial),axis=None))
-
             state = self.env.tick()
-            if self.auto_control == False:
-                command = self.parse_keys(self.force)
-                self.env.act("auv0", command)
             self.pose_sensor_update(state)
-
             if 'ImagingSonar' in state:
-                coords = self.sonar_data_(state)
-                if self.auto_control:
-                    self.automatic_control(state)
-                all_coords.append(coords)
-
                 if self.sonar_image:
                     self.update_sonar_image(state)
-
+                coords = self.get_coord_from_sonar(state)
+                all_coords.append(coords)
+                
+                self.align_to_dense_region(state)
+                self.env.step(self.command*0.0001)
+      
         all_coords = np.vstack(all_coords)
-        self.create_pointcloud(all_coords,'cloud',visualize_pcd=True)
+        self.create_pointcloud(all_coords, 'cloud', visualize_pcd=True)
 
-hov_simulator = HOVSimulator(auto_control=True)
+hov_simulator = HOVSimulator(auto_control=True,sonar_image=False)
 hov_simulator.run_simulation()
-
-#detectar qual região do hov tem uma concentracao maior de points
-#e assim fazer ele se locomover até ela 
-#centralizar o ponto mais denso dos dados com o centro de visão do hov
-#manter as rotações estaveis (está desgovernado)
-#python robotics
-#curva de bezier
+#rotacoes estão desativas = pcd desalinhada
