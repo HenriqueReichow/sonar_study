@@ -108,7 +108,14 @@ class HOVSimulator:
     def update_sonar_image(self, state):
         s = state['ImagingSonar']
         self.plot.set_array(s.ravel())
-        #self.ax.scatter(np.max(s), color='red', s=100, label='Ponto mais denso')
+        raio = np.sqrt((self.mean_point[0] - self.position[0])**2 + (self.mean_point[1] - self.position[1])**2)
+        theta = np.arctan2(self.mean_point[1] - self.position[1], self.mean_point[0] - self.position[0])
+        theta_deg = np.degrees(theta)
+        if theta_deg < -self.azi / 2:
+            theta_deg += 360  
+        elif theta_deg > self.azi / 2:
+            theta_deg -= 360
+        self.a = self.ax.scatter(np.radians(theta_deg), raio, color='red', s=10, label='Mean Point')
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
 
@@ -123,33 +130,29 @@ class HOVSimulator:
 
     def calculateVelocities(self,point,rot)->None:
         position_error = point - self.position
-        
         desired_linear_velocity = self.pid_controller_linear.update(np.linalg.norm(position_error), self.dt)
         linear_velocity = position_error / np.linalg.norm(position_error) * desired_linear_velocity
-
         erro_orientacao = rot - self.rotation
-
         erro_orientacao[erro_orientacao > 180] -= 360
         erro_orientacao[erro_orientacao < -180] += 360
-
         desired_angular_velocity = self.pid_controller_angular.update(np.linalg.norm(erro_orientacao), self.dt)
         angular_velocity = erro_orientacao / np.linalg.norm(erro_orientacao) * desired_angular_velocity
         angular_velocity=[0,0,angular_velocity[2]]
         self.command = np.concatenate(([0,0,0], angular_velocity), axis=None)
+        if np.isnan(self.command[5]):
+            self.env.reset()
         print(self.command)
 
     def get_coord_from_sonar(self, state):
         sonar_data = state['ImagingSonar']
         dist_vals, self.angul_vals = np.meshgrid(self.r, self.theta, indexing="ij")
         x, y, z = self.coord_translate(dist_vals, self.angul_vals, np.radians(90 - self.rotation[1]))
-        print(x,y,z)
         mask_points = sonar_data > (np.max(sonar_data) * self.max_intensity)
-        mask_distances = np.sqrt(x**2 + y**2 + z**2) < 35.0
+        mask_distances = np.sqrt(x**2 + y**2 + z**2) < 30.0
         mask = mask_points & mask_distances
         coords = np.column_stack((x[mask] + self.position[0], 
                                  y[mask] + self.position[1], 
                                  z[mask] + self.position[2]))
-        
         return coords
     
     def align_to_dense_region(self, state):
@@ -159,14 +162,11 @@ class HOVSimulator:
         ponto_A = self.coord_translate(self.maxR, self.binsA/2, np.radians(90 - self.rotation[1]))
         vetor_v = [ponto_A[0]-self.position[0], ponto_A[1]-self.position[1], ponto_A[2]-self.position[2]]
         coords = self.get_coord_from_sonar(state)
-        mean_point = np.mean(coords, axis=0)
-        vetor_u = [mean_point[0]-self.position[0], mean_point[1]-self.position[1], mean_point[2]-self.position[2]]
+        self.mean_point = np.mean(coords, axis=0)
+        vetor_u = [self.mean_point[0]-self.position[0], self.mean_point[1]-self.position[1], self.mean_point[2]-self.position[2]]
         cos_alfa = ((vetor_v[0]*vetor_u[0]) + (vetor_v[1]*vetor_u[1]) + (vetor_v[2]*vetor_u[2])) / (np.linalg.norm(vetor_u)*np.linalg.norm(vetor_v))
         angulo = math.degrees(math.acos(cos_alfa))
- 
-        self.calculateVelocities(self.position,[0,0,75-angulo])
-        if self.rotation[2] <= 75-angulo+1:
-            self.command = [0,0,0,0,0,0]
+        self.calculateVelocities(self.position,[0,0,self.rotation[2]-angulo])
 
     def run_simulation(self):
         all_coords = []
@@ -178,18 +178,29 @@ class HOVSimulator:
                 break
             state = self.env.tick()
             self.pose_sensor_update(state)
-            if 'ImagingSonar' in state:
-                if self.sonar_image:
-                    self.update_sonar_image(state)
+            if 'ImagingSonar' in state: 
                 coords = self.get_coord_from_sonar(state)
                 all_coords.append(coords)
-                
                 self.align_to_dense_region(state)
                 self.env.step(self.command*0.0001)
-      
+                if self.sonar_image:
+                    self.update_sonar_image(state)
+                    self.a.remove()
+                
         all_coords = np.vstack(all_coords)
         self.create_pointcloud(all_coords, 'cloud', visualize_pcd=True)
 
-hov_simulator = HOVSimulator(auto_control=True,sonar_image=False)
+hov_simulator = HOVSimulator(auto_control=True,sonar_image=True)
 hov_simulator.run_simulation()
 #rotacoes estão desativas = pcd desalinhada
+#falta refinar quando a rotação ta certa
+""" -- Reunião sensores - 02/12/24
+parte de alinhar o hov ao local mais denso = done
+refinar oq fazer depois de alinhado
+ir pra parte de orientar ele autonomamente
+fazer curvas e trajetorias predefinidas
+2
+contribuição com sensores e autonomia
+separação dos códigos para melhor modularização
+posteriormente ajudar a criar novos módulos para o utils do holoocean
+"""
