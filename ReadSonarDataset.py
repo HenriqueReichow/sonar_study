@@ -2,9 +2,10 @@ import numpy as np
 import json
 import open3d as o3d
 import os
+import sys
 
-class ReadDataset:
-    def __init__(self, visualize_pcd = True, mission_dataset_path = "/home/lh/Documents/all_missions/mission-1", distance_filter = True, intensity_filter = 0.0):
+class DatasetToPointcloud:
+    def __init__(self, visualize_pcd = True, mission_dataset_path = "/home/lh/Documents/all_missions/mission-1", distance_filter = True, intensity_filter=0.8):
         self.visualize_pcd = visualize_pcd
         self.mission_dataset_path = mission_dataset_path
         self.distance_filter = distance_filter
@@ -38,14 +39,14 @@ class ReadDataset:
         if "mission-2" in self.mission_dataset_path:
             return 
         if "mission-3" in self.mission_dataset_path:
-            return 3
+            return 3 
         else:
             return 4
         
     def sonardata_to_pcd(self):
-        for n in range(40):
+        for n in range(len(os.listdir(self.mission_dataset_path))):
             all_coords = []
-            for k in range(1,500):
+            for k in range(1,len(os.listdir(os.path.join(self.mission_dataset_path,f"auv-{n}-data")))+1):
                     try:
                         dados = np.load(self.mission_dataset_path + f"/auv-{n}-data/{n}-raw-sonar-data-{k}.npy")
 
@@ -119,5 +120,5 @@ class ReadDataset:
             if self.visualize_pcd:
                 o3d.visualization.draw_geometries([pcd_load])
 
-a = ReadSonarDataset()
+a = DatasetToPointcloud(intensity_filter=0.8)
 a.sonardata_to_pcd()
