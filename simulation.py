@@ -38,7 +38,74 @@ class ROVSimulator:
         self.pid_controller_angular = holoOceanUtils.PIDController(kp=0.01, ki=0.0, kd=0.01)
         self.dt = 1 / 200
         self.command = None
+        self.reached_waypoints = 0
     
+    def reachedWaypoint(self, waypoints)->bool:#verifica se alinhou
+        self.waypoints = waypoints
+        tresh_hold_distance=0.1
+        tresh_hold_angle=1.0
+        x_rov=self.position[0]
+        y_rov=self.position[1]
+        z_rov=self.position[2]
+        roll_rov=self.rotation[0]
+        pitch_rov=self.rotation[1]
+        yaw_rov=self.rotation[2]
+        
+        if roll_rov>180:
+            roll_rov-=360
+        if pitch_rov>180:
+            pitch-=360
+        if yaw_rov>180:
+            yaw_rov-=360
+
+        x=self.actual_waypoint[0]
+        y=self.actual_waypoint[1]
+        z=self.actual_waypoint[2]
+        roll=self.actual_waypoint[3]
+        pitch=self.actual_waypoint[4]
+        yaw=self.actual_waypoint[5]
+
+        if roll>180:
+            roll-=360
+        if pitch>180:
+            pitch-=360
+        if yaw>180:
+            yaw-=360
+
+        if np.linalg.norm(np.array([x,y,z])-np.array([x_rov,y_rov,z_rov]))<=tresh_hold_distance and np.linalg.norm(roll-roll_rov)<=tresh_hold_angle and np.linalg.norm(pitch-pitch_rov)<=tresh_hold_angle and np.linalg.norm(yaw-yaw_rov)<=tresh_hold_angle:
+            self.reached_waypoints+=1
+            if self.reached_waypoints<len(self.waypoints):
+                self.actual_waypoint=waypoints[self.reached_waypoints]
+                return True
+            else:
+                return False
+        return False
+    
+    def calculateVelocities(self)->None:#calcula o command para o rov baseado na nova posicao
+        position_error = self.actual_waypoint - self.position
+        
+        desired_linear_velocity = self.pid_controller_linear.update(np.linalg.norm(position_error), self.dt)
+        linear_velocity = position_error / np.linalg.norm(position_error) * desired_linear_velocity
+
+        # erro_orientacao = self.actual_waypoint[3:] - self.rotation
+
+        # erro_orientacao[erro_orientacao > 180] -= 360
+        # erro_orientacao[erro_orientacao < -180] += 360
+
+        # desired_angular_velocity = self.pid_controller_angular.update(np.linalg.norm(erro_orientacao), self.dt)
+        # angular_velocity = erro_orientacao / np.linalg.norm(erro_orientacao) * desired_angular_velocity
+        # angular_velocity=[0,0,angular_velocity[2]]
+        self.command = np.concatenate((linear_velocity, [0,0,0]), axis=None)
+        #print(self.command)
+
+    def fineshedMission(self)->bool:#verifica se todos os waypoints foram visitados
+        if self.reached_waypoints-1>len(self.waypoints):
+            self.command=[0,0,0,0,0,0]
+            plt.close('all')
+            return True
+        else:
+            return False
+        
     def parse_keys(self, val): #Comandos de teclado para o ROV
         command = np.zeros(8)
         if 'i' in self.pressed_keys:
@@ -176,19 +243,19 @@ class ROVSimulator:
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
 
-    def calculateVelocities(self,point,rot)->None: #calcula o vetor de velocidades para que o hov chegue até algum determinado local
-        position_error = point - self.position
-        desired_linear_velocity = self.pid_controller_linear.update(np.linalg.norm(position_error), self.dt)
-        linear_velocity = position_error / np.linalg.norm(position_error) * desired_linear_velocity
-        erro_orientacao = rot - self.rotation
-        erro_orientacao[erro_orientacao > 180] -= 360
-        erro_orientacao[erro_orientacao < -180] += 360
-        desired_angular_velocity = self.pid_controller_angular.update(np.linalg.norm(erro_orientacao), self.dt)
-        angular_velocity = erro_orientacao / np.linalg.norm(erro_orientacao) * desired_angular_velocity
-        angular_velocity=[0,0,angular_velocity[2]]
-        self.command = np.concatenate(([0,0,0], angular_velocity), axis=None)
-        if np.isnan(self.command[5]):
-            self.env.reset()
+    # def calculateVelocities(self,point,rot)->None: #calcula o vetor de velocidades para que o hov chegue até algum determinado local
+    #     position_error = point - self.position
+    #     desired_linear_velocity = self.pid_controller_linear.update(np.linalg.norm(position_error), self.dt)
+    #     linear_velocity = position_error / np.linalg.norm(position_error) * desired_linear_velocity
+    #     erro_orientacao = rot - self.rotation
+    #     erro_orientacao[erro_orientacao > 180] -= 360
+    #     erro_orientacao[erro_orientacao < -180] += 360
+    #     desired_angular_velocity = self.pid_controller_angular.update(np.linalg.norm(erro_orientacao), self.dt)
+    #     angular_velocity = erro_orientacao / np.linalg.norm(erro_orientacao) * desired_angular_velocity
+    #     angular_velocity=[0,0,angular_velocity[2]]
+    #     self.command = np.concatenate(([0,0,0], angular_velocity), axis=None)
+    #     if np.isnan(self.command[5]):
+    #         self.env.reset()
 
     def get_coord_from_sonar(self, state): #traduz a matriz de intensidade do ROV para pontos no espaço 3D
         sonar_data = state['ImagingSonar']
@@ -237,15 +304,17 @@ class ROVSimulator:
                 # pcd = self.create_pointcloud(np.asarray(coords), f'sub/cloud_{n}', visualize_pcd=False)
                 # temps.append(pcd)
                 
-                n += 1
+                # n += 1
                 all_coords.append(coords)
 
-                if self.auto_control:
-                    self.align_to_dense_region(state)
+                if self.auto_control:#-215 -26 -50
+                    pass
+                    #self.align_to_dense_region(state)
                 else:
                     self.env.set_control_scheme("auv0", 0)
-                    self.command = self.parse_keys(25)
-
+                    self.command = self.parse_keys(25) 
+                self.reached_waypoints([[-215.0, 4.0, -50.0], [-185.0, -26.0, -50.0], [-215.0, -56.0, -50.0]])
+                self.calculateVelocities()
                 self.env.step(self.command)
 
                 if self.sonar_image:
@@ -271,5 +340,5 @@ class ROVSimulator:
         all_coords = np.vstack(all_coords)
         self.create_pointcloud(all_coords, 'cloud', visualize_pcd=True)
 
-hov_simulator = ROVSimulator(auto_control=False,sonar_image=False)
+hov_simulator = ROVSimulator(auto_control=True,sonar_image=False)
 hov_simulator.run_simulation()

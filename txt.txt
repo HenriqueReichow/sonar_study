@@ -1,0 +1,90 @@
+rotacoes estão desativas = pcd desalinhada
+falta refinar quando a rotação ta certa
+-- Reunião sensores - 02/12/24
+parte de alinhar o rov ao local mais denso = done
+refinar oq fazer depois de alinhado
+ir pra parte de orientar ele autonomamente
+fazer curvas e trajetorias predefinidas
+2
+contribuição com sensores e autonomia
+separação dos códigos para melhor modularização
+posteriormente ajudar a criar novos módulos para o utils do holoocean
+
+dia 03/12/24:
+basicamente tenho que arrumar oq fazer depois de alinhar e entra na parte de deslocamento em si.
+"""  
+#erro do proprio open3d (conversa com o matheus)
+#gerar duas nuvens e tentar alinha-las a todo custo
+#possivel erro dos quaternions do open3d
+#quaternion inverso
+#tentar realizar a reconstrução com a trajetoria diferente(dataset do bomba) e depois com a atual para ver o resultado
+#primeiro implementar deslocamento do veiculo com rotação e depois apenas rotação
+#aparentemente o teaser++ funciona
+#implementar o teaser para todas as nuvens = deu ruim 
+
+#ultima atualizacao = alinhamento de duas nuvens funfando - aplicar ao resto das nuvens
+#quando deixa generico com varias nuvens fica desalinhado novamente
+
+#planos = modularizar os defs e tentar implementar o jeito que o bomba rotaciona no seu dataset
+
+#tentar usar a rotação que o bomba usou
+
+Txt oficial - Rumar a uma área que me interesse:
+1- Nuvens continuam desalinhadas quando implementadas de forma genérica
+2- Organizar melhor o codigo
+
+tracking estructures
+
+1- Pegar uma parte teorica sobre:
+    - curved lines (trajetoria)
+    - curvas de bezier 
+    - rrt com foco virtual
+
+2- discretizar um caminho
+    - colocar pontos no espaco 
+    - spawnar o veiculo nesses pontos com um controle especifico para o yaw
+    - testando
+
+3- Bem depois
+    - utilizar o code de cobertura
+    - ver qual melhor caminho 
+
+caminho:
+meio = #-215 -26 -50
+
+inicial = [-245.0, -26.0, -50.0]
+outros points = [-185.0, -26.0, -50,0] , [-215.0, 4.0, -50.0], [-215.0, -56.0, -50.0]
+
+list_waypoints =[-245.0, -26.0, -50.0], [-215.0, 4.0, -50.0], [-185.0, -26.0, -50.0], [-215.0, -56.0, -50.0]
+
+feitos:
+
+-participacao no grupo sa 
+    contribuição com os estudos do matheus no coverage
+    (melhorar a explicacao)
+
+-conversa com matheus e bomba:
+    estudar algo sobre tracking 
+    divisao de alguns proximos passos
+
+a fazer (fazendo)
+
+    TEORICA
+    1- Pegar uma parte teorica sobre:
+        - curved lines (trajetoria)
+        - curvas de bezier 
+        - rrt com foco virtual
+    
+    PARTE PRATICA
+
+    2- discretizar um caminho
+        - colocar pontos no espaco 
+        - spawnar o veiculo nesses pontos com um controle especifico para o yaw
+        - testando
+djkistra
+a estrela
+
+usar o algoritmo de djkistra para coverage e depois clusterizar. Criar algo solido sobre
+focado apenas em coverage (por enquanto)
+
+Criar code para automatizar os jsons do holoocean
